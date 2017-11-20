@@ -1,1 +1,1 @@
-# DP-for-Image-Zoom-
+# DP-for-Image-Retargeting
