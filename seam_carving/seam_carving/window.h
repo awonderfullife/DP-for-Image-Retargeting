@@ -7,7 +7,7 @@
 namespace seam_carving {
 	class window {
 	public:
-		window(LPCTSTR cls_name, WNDPROC msg_handler) {
+		window(LPCTSTR cls_name, WNDPROC msg_handler, DWORD style = WS_OVERLAPPEDWINDOW) {
 			HINSTANCE hinst = GetModuleHandle(nullptr);
 			WNDCLASSEX wcex;
 			std::memset(&wcex, 0, sizeof(wcex));
@@ -19,7 +19,7 @@ namespace seam_carving {
 			wcex.lpszClassName = cls_name;
 			_wndatom = RegisterClassEx(&wcex);
 			_hwnd = CreateWindowEx(
-				0, cls_name, cls_name, WS_OVERLAPPEDWINDOW,
+				0, cls_name, cls_name, style,
 				CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT, CW_USEDEFAULT,
 				nullptr, nullptr, hinst, nullptr
 			);

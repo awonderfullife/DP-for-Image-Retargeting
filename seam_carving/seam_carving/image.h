@@ -4,8 +4,6 @@
 #include <cstring>
 #include <cmath>
 
-#include <Windows.h>
-
 #include "utils.h"
 
 namespace seam_carving {

@@ -4,6 +4,8 @@
 
 #include <Windows.h>
 #include <wincodec.h>
+#undef min
+#undef max
 
 #ifdef NDEBUG
 #	define SC_COM_CHECK(X) (X)
