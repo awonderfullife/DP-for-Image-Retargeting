@@ -32,5 +32,8 @@
     <ClInclude Include="carver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="dancing_link_carver.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
 </Project>

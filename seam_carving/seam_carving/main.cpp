@@ -1,16 +1,19 @@
 #include <utility>
+#include <chrono>
 
 #include "window.h"
 #include "carver.h"
+#include "dancing_link_carver.h"
 
 using namespace seam_carving;
 
+#define USE_DL_CARVER
+
 window *main_window = nullptr;
-window *side_window = nullptr;
 size_t window_count = 0;
 
 template <typename ...Args> void new_window(window *& wptr, Args &&...args) {
-	assert(main_window == nullptr);
+	assert(wptr == nullptr);
 	wptr = new window(std::forward<Args>(args)...);
 	++window_count;
 }
@@ -24,7 +27,11 @@ void try_delete_window(window *&ptr) {
 }
 
 image_rgba_u8 orig_img;
+#ifdef USE_DL_CARVER
+dancing_link_retargeter retargeter;
+#else
 dynamic_retargeter retargeter;
+#endif
 sys_image *simg = nullptr;
 
 void generate_sys_image(const image_rgba_u8 &img) {
@@ -42,9 +49,9 @@ void restrict_size(bool adjfirst, bool adjsecond, LONG &f, LONG &s, size_t delta
 	size_t cursz = s - f - delta;
 	cursz = (cursz > max ? max : (cursz < min ? min : cursz));
 	if (adjfirst) {
-		f = s - cursz - delta;
+		f = s - static_cast<LONG>(cursz + delta);
 	} else if (adjsecond) {
-		s = f + cursz + delta;
+		s = f + static_cast<LONG>(cursz + delta);
 	}
 }
 const bool resize_edges[][4] = {
@@ -84,7 +91,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				width = std::max<size_t>(2, r.right - r.left - xdiff), height = std::max<size_t>(2, r.bottom - r.top - ydiff);
 			retargeter.retarget(width, height);
 			generate_sys_image(retargeter.get_image());
-			restrict_size(wparam, r, xdiff, ydiff, 2, retargeter.get_image().width(), 2, retargeter.get_image().height());
+			restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, 2, retargeter.get_image().width(), 2, retargeter.get_image().height());
 		}
 		return TRUE;
 	}

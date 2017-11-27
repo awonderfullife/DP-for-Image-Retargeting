@@ -71,8 +71,8 @@ namespace seam_carving {
 				_hwnd,
 				r.left,
 				r.top,
-				w - c.right + r.right - r.left,
-				h - c.bottom + r.bottom - r.top,
+				static_cast<int>(w) - c.right + r.right - r.left,
+				static_cast<int>(h) - c.bottom + r.bottom - r.top,
 				false
 			);
 		}

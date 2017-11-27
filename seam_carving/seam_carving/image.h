@@ -284,8 +284,8 @@ namespace seam_carving {
 			BITMAPINFO info;
 			std::memset(&info, 0, sizeof(BITMAPINFO));
 			info.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
-			info.bmiHeader.biWidth = _w;
-			info.bmiHeader.biHeight = _h;
+			info.bmiHeader.biWidth = static_cast<LONG>(_w);
+			info.bmiHeader.biHeight = static_cast<LONG>(_h);
 			info.bmiHeader.biPlanes = 1;
 			info.bmiHeader.biBitCount = 32;
 			info.bmiHeader.biCompression = BI_RGB;
@@ -330,7 +330,7 @@ namespace seam_carving {
 			display_region(hdc, 0, 0, 0, 0, _w, _h);
 		}
 		void display_region(HDC hdc, int sx, int sy, int dx, int dy, size_t w, size_t h) const {
-			SC_WINAPI_CHECK(BitBlt(hdc, dx, dy, w, h, _dc, sx, sy, SRCCOPY));
+			SC_WINAPI_CHECK(BitBlt(hdc, dx, dy, static_cast<int>(w), static_cast<int>(h), _dc, sx, sy, SRCCOPY));
 		}
 	protected:
 		size_t _w, _h;
