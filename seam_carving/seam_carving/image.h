@@ -230,11 +230,11 @@ namespace seam_carving {
 #define SC_DEVICE_COLOR_SETR(X, R) ((X) ^= ((X) & 0xFF0000) ^ (static_cast<DWORD>(R) << 16))
 #define SC_DEVICE_COLOR_SETA(X, A) ((X) ^= ((X) & 0xFF000000) ^ (static_cast<DWORD>(A) << 24))
 
-	struct device_color {
-		device_color() = default;
-		device_color(unsigned char a, unsigned char r, unsigned char g, unsigned char b) : argb(SC_DEVICE_COLOR_ARGB(a, r, g, b)) {
+	struct sys_color {
+		sys_color() = default;
+		sys_color(unsigned char a, unsigned char r, unsigned char g, unsigned char b) : argb(SC_DEVICE_COLOR_ARGB(a, r, g, b)) {
 		}
-		explicit device_color(const color_rgba_u8 &c) : device_color(c.a, c.r, c.g, c.b) {
+		explicit sys_color(const color_rgba_u8 &c) : sys_color(c.a, c.r, c.g, c.b) {
 		}
 		explicit operator color_rgba_u8() const {
 			return color_rgba_u8(
@@ -280,6 +280,7 @@ namespace seam_carving {
 
 	class sys_image {
 	public:
+		sys_image() = default;
 		sys_image(HDC hdc, size_t w, size_t h) : _w(w), _h(h), _dc(CreateCompatibleDC(hdc)) {
 			BITMAPINFO info;
 			std::memset(&info, 0, sizeof(BITMAPINFO));
@@ -292,14 +293,29 @@ namespace seam_carving {
 			_bmp = CreateDIBSection(_dc, &info, DIB_RGB_COLORS, reinterpret_cast<void**>(&_arr), nullptr, 0);
 			_old = static_cast<HBITMAP>(SelectObject(_dc, _bmp));
 		}
-		sys_image(sys_image&&) = delete;
+		sys_image(sys_image &&src) : _w(src._w), _h(src._h), _bmp(src._bmp), _old(src._old), _dc(src._dc), _arr(src._arr) {
+			src._w = src._h = 0;
+			src._bmp = src._old = nullptr;
+			src._dc = nullptr;
+			src._arr = nullptr;
+		}
 		sys_image(const sys_image&) = delete;
-		sys_image &operator=(sys_image&&) = delete;
+		sys_image &operator=(sys_image &&src) {
+			std::swap(_w, src._w);
+			std::swap(_h, src._h);
+			std::swap(_bmp, src._bmp);
+			std::swap(_old, src._old);
+			std::swap(_dc, src._dc);
+			std::swap(_arr, src._arr);
+			return *this;
+		}
 		sys_image &operator=(const sys_image&) = delete;
 		~sys_image() {
-			SelectObject(_dc, _old);
-			DeleteObject(_bmp);
-			DeleteDC(_dc);
+			if (valid()) {
+				SelectObject(_dc, _old);
+				SC_WINAPI_CHECK(DeleteObject(_bmp));
+				DeleteDC(_dc);
+			}
 		}
 
 		size_t width() const {
@@ -308,20 +324,27 @@ namespace seam_carving {
 		size_t height() const {
 			return _h;
 		}
-		device_color *data() const {
+		sys_color *data() const {
 			return _arr;
 		}
-		device_color &at(size_t x, size_t y) {
+		sys_color *at_y(size_t y) {
+			return _arr + (_w * y);
+		}
+		sys_color &at(size_t x, size_t y) {
 			assert(x < _w && y < _h);
 			return _arr[_w * y + x];
 		}
 
+		HDC get_dc() const {
+			return _dc;
+		}
+
 		void copy_from_image(const image<color_rgba_u8> &img, size_t x = 0, size_t y = 0) {
 			for (size_t dy = 0; dy < img.height(); ++dy) {
-				device_color *cptr = _arr + ((y + dy) * _w + x);
+				sys_color *cptr = _arr + ((y + dy) * _w + x);
 				const color_rgba_u8 *orig = img.at_y(img.height() - dy - 1);
 				for (size_t dx = 0; dx < img.width(); ++dx, ++cptr, ++orig) {
-					*cptr = device_color(*orig);
+					*cptr = sys_color(*orig);
 				}
 			}
 		}
@@ -332,10 +355,14 @@ namespace seam_carving {
 		void display_region(HDC hdc, int sx, int sy, int dx, int dy, size_t w, size_t h) const {
 			SC_WINAPI_CHECK(BitBlt(hdc, dx, dy, static_cast<int>(w), static_cast<int>(h), _dc, sx, sy, SRCCOPY));
 		}
+
+		bool valid() const {
+			return _arr != nullptr;
+		}
 	protected:
-		size_t _w, _h;
-		HBITMAP _bmp, _old;
-		HDC _dc;
-		device_color *_arr = nullptr;
+		size_t _w = 0, _h = 0;
+		HBITMAP _bmp = nullptr, _old = nullptr;
+		HDC _dc = nullptr;
+		sys_color *_arr = nullptr;
 	};
 }

@@ -1,5 +1,6 @@
 #pragma once
 
+#define OEMRESOURCE
 #include <windowsx.h>
 
 #include "image.h"
@@ -7,6 +8,7 @@
 namespace seam_carving {
 	class window {
 	public:
+		window() = default;
 		window(LPCTSTR cls_name, WNDPROC msg_handler, DWORD style = WS_OVERLAPPEDWINDOW) {
 			HINSTANCE hinst = GetModuleHandle(nullptr);
 			WNDCLASSEX wcex;
@@ -24,9 +26,18 @@ namespace seam_carving {
 				nullptr, nullptr, hinst, nullptr
 			);
 		}
+		window(window &&src) : _hwnd(src._hwnd), _wndatom(src._wndatom) {
+			src._hwnd = nullptr;
+		}
+		window(const window&) = delete;
+		window &operator=(window &&src) {
+			std::swap(_hwnd, src._hwnd);
+			std::swap(_wndatom, src._wndatom);
+			return *this;
+		}
+		window &operator=(const window&) = delete;
 		~window() {
-			DestroyWindow(_hwnd);
-			UnregisterClass(reinterpret_cast<LPCTSTR>(_wndatom), GetModuleHandle(nullptr));
+			close();
 		}
 
 		bool peek_message() {
@@ -95,19 +106,89 @@ namespace seam_carving {
 			ShowWindow(_hwnd, SW_HIDE);
 		}
 
+		void close() {
+			if (valid()) {
+				DestroyWindow(_hwnd);
+				UnregisterClass(reinterpret_cast<LPCTSTR>(_wndatom), GetModuleHandle(nullptr));
+				_hwnd = nullptr;
+			}
+		}
+
 		HWND get_handle() const {
 			return _hwnd;
 		}
 		HDC get_dc() const {
 			return GetDC(_hwnd);
 		}
+		bool valid() const {
+			return _hwnd != nullptr;
+		}
 	protected:
-		HWND _hwnd;
+		HWND _hwnd = nullptr;
 		ATOM _wndatom;
 	};
 
-	inline void get_xy_from_lparam(LPARAM lparam, SHORT &x, SHORT &y) {
-		x = GET_X_LPARAM(lparam);
-		y = GET_Y_LPARAM(lparam);
+	class font {
+	public:
+		font() = default;
+		font(size_t height, LPCWSTR name) {
+			_fon = CreateFont(
+				static_cast<int>(height), 0, 0, 0,
+				FW_DONTCARE, false, false, false, DEFAULT_CHARSET,
+				OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, FF_DONTCARE, name
+			);
+			SC_WINAPI_CHECK(_fon);
+		}
+		font(const LOGFONT &fdata) {
+			_fon = CreateFontIndirect(&fdata);
+			SC_WINAPI_CHECK(_fon);
+		}
+		font(font &&src) : _fon(src._fon) {
+			src._fon = nullptr;
+		}
+		font(const font&) = delete;
+		font &operator=(font &&src) {
+			std::swap(_fon, src._fon);
+			return *this;
+		}
+		font &operator=(const font&) = delete;
+		~font() {
+			if (valid()) {
+				SC_WINAPI_CHECK(DeleteObject(_fon));
+			}
+		}
+
+		HGDIOBJ select(HDC dc) {
+			assert(valid());
+			return SelectObject(dc, _fon);
+		}
+		void deselect(HDC dc, HGDIOBJ obj) {
+			SelectObject(dc, obj);
+		}
+
+		HFONT get_handle() const {
+			return _fon;
+		}
+
+		bool valid() const {
+			return _fon != nullptr;
+		}
+
+		inline static font get_default() {
+			NONCLIENTMETRICS ncm;
+			ncm.cbSize = sizeof(ncm);
+			SC_WINAPI_CHECK(SystemParametersInfo(SPI_GETNONCLIENTMETRICS, sizeof(ncm), &ncm, 0));
+			return font(ncm.lfMenuFont);
+		}
+	protected:
+		HFONT _fon = nullptr;
+	};
+
+	inline bool is_key_down(int key) {
+		return GetAsyncKeyState(key) & 0x8000;
+	}
+	inline void get_xy_from_lparam(LPARAM lparam, int &x, int &y) {
+		x = static_cast<int>(GET_X_LPARAM(lparam));
+		y = static_cast<int>(GET_Y_LPARAM(lparam));
 	}
 }

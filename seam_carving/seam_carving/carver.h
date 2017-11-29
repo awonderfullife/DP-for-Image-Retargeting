@@ -325,6 +325,13 @@ namespace seam_carving {
 				}
 			}
 		}
+
+		size_t current_width() const {
+			return _curimg.width();
+		}
+		size_t current_height() const {
+			return _curimg.height();
+		}
 	protected:
 		image_rgba_u8 _curimg;
 		std::vector<carve_path> _carved;

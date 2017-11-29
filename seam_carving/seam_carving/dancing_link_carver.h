@@ -56,6 +56,18 @@ namespace seam_carving {
 			assert(yi == _h);
 			return res;
 		}
+		sys_image get_sys_image(HDC dc) const {
+			sys_image res(dc, _w, _h);
+			size_t yi = 0;
+			for (ptr_t y = _tl; y != null; y = _n[y].down, ++yi) {
+				sys_color *c = res.at_y(_h - yi - 1);
+				for (ptr_t x = y; x != null; x = _n[x].right, ++c) {
+					*c = sys_color(_n[x].color);
+				}
+			}
+			assert(yi == _h);
+			return res;
+		}
 
 		ptr_t get_vertical_carve_path() {
 			return _get_carve_path_impl<&_node::left, &_node::right, &_node::up, &_node::down>();
@@ -74,12 +86,13 @@ namespace seam_carving {
 			--_h;
 		}
 		void restore_path() {
-			_restore_path_impl(_cps.back().first);
 			switch (_cps.back().second) {
 			case orientation::horizontal:
+				_restore_path_impl<&_node::up, &_node::down>(_cps.back().first);
 				++_h;
 				break;
 			case orientation::vertical:
+				_restore_path_impl<&_node::left, &_node::right>(_cps.back().first);
 				++_w;
 				break;
 			}
@@ -147,12 +160,9 @@ namespace seam_carving {
 		}
 	protected:
 		struct _node {
-			color_t color;
 			real_t energy, dp;
-			ptr_t left = null, up = null, right = null, down = null, ptr1 = null, ptr2 = null;
-
-			void calculate_energy() {
-			}
+			color_t color;
+			ptr_t left = null, up = null, right = null, down = null, path_ptr = null;
 		};
 
 		void _calc_energy_elem(ptr_t nptr) {
@@ -179,7 +189,7 @@ namespace seam_carving {
 			}
 		}
 		template <ptr_t _node::*XN, ptr_t _node::*XP, ptr_t _node::*YN, ptr_t _node::*YP> void _fix_detached_links(ptr_t prev) {
-			_node &pn = _n[prev], &nn = _n[pn.ptr1];
+			_node &pn = _n[prev], &nn = _n[pn.path_ptr];
 			ptr_t u, d;
 			if (nn.*XP == pn.*YP) {
 				u = pn.*XN;
@@ -196,15 +206,15 @@ namespace seam_carving {
 		template <ptr_t _node::*XN, ptr_t _node::*XP, ptr_t _node::*YN, ptr_t _node::*YP> ptr_t _get_carve_path_impl() {
 			for (ptr_t x = _br; x != null; x = _n[x].*XN) {
 				_n[x].dp = _n[x].energy;
-				_n[x].ptr1 = null;
+				_n[x].path_ptr = null;
 			}
 			for (ptr_t y = _n[_br].*YN; y != null; y = _n[y].*YN) {
 				ptr_t x = y;
 				_node *xn = &_n[x], *xdn = &_n[xn->*YP];
-				xn->ptr1 = xn->*YP;
+				xn->path_ptr = xn->*YP;
 				if (_n[xdn->*XN].dp < xdn->dp) {
-					xn->ptr1 = xdn->*XN;
-					xn->dp = _n[xn->ptr1].dp;
+					xn->path_ptr = xdn->*XN;
+					xn->dp = _n[xn->path_ptr].dp;
 				} else {
 					xn->dp = xdn->dp;
 				}
@@ -212,22 +222,22 @@ namespace seam_carving {
 				for (x = xn->*XN, xn = &_n[x]; xn->*XN != null; x = xn->*XN, xn = &_n[x]) {
 					xdn = &_n[xn->*YP];
 					real_t mdpv = xdn->dp;
-					xn->ptr1 = xn->*YP;
+					xn->path_ptr = xn->*YP;
 					if (_n[xdn->*XN].dp < mdpv) {
-						xn->ptr1 = xdn->*XN;
+						xn->path_ptr = xdn->*XN;
 						mdpv = _n[xdn->*XN].dp;
 					}
 					if (_n[xdn->*XP].dp < mdpv) {
-						xn->ptr1 = xdn->*XP;
+						xn->path_ptr = xdn->*XP;
 						mdpv = _n[xdn->*XP].dp;
 					}
 					xn->dp = mdpv + xn->energy;
 				}
 				xdn = &_n[xn->*YP];
-				xn->ptr1 = xn->*YP;
+				xn->path_ptr = xn->*YP;
 				if (_n[xdn->*XP].dp < xdn->dp) {
-					xn->ptr1 = xdn->*XP;
-					xn->dp = _n[xn->ptr1].dp;
+					xn->path_ptr = xdn->*XP;
+					xn->dp = _n[xn->path_ptr].dp;
 				} else {
 					xn->dp = xdn->dp;
 				}
@@ -241,25 +251,21 @@ namespace seam_carving {
 			}
 			return res;
 		}
+		template <ptr_t _node::*XN, ptr_t _node::*XP, ptr_t _node::*YN, ptr_t _node::*YP> ptr_t _get_carve_path_incremental_impl(ptr_t lastpath) {
+			// TODO
+		}
 		template <ptr_t _node::*XN, ptr_t _node::*XP, ptr_t _node::*YN, ptr_t _node::*YP> void _carve_path_impl(ptr_t head) {
 			_detach_elem<XN, XP>(head);
-			for (ptr_t prv = head, n = _n[prv].ptr1; n != null; prv = n, n = _n[n].ptr1) {
+			for (ptr_t prv = head, n = _n[prv].path_ptr; n != null; prv = n, n = _n[n].path_ptr) {
 				_detach_elem<XN, XP>(n);
 				if (n != _n[prv].*YP) {
 					_fix_detached_links<XN, XP, YN, YP>(prv);
 				}
 			}
-			for (ptr_t cur = head; cur != null; cur = _n[cur].ptr1) {
-				if (_n[cur].*XN != null) {
-					_calc_energy_elem(_n[cur].*XN);
-				}
-				if (_n[cur].*XP != null) {
-					_calc_energy_elem(_n[cur].*XP);
-				}
-			}
+			_recalc_path_side_energy<XN, XP>(head);
 		}
-		void _restore_path_impl(ptr_t p) {
-			for (ptr_t cur = p; cur != null; cur = _n[cur].ptr1) {
+		template <ptr_t _node::*XN, ptr_t _node::*XP> void _restore_path_impl(ptr_t p) {
+			for (ptr_t cur = p; cur != null; cur = _n[cur].path_ptr) {
 				_node &cn = _n[cur];
 				if (cn.left != null) {
 					_n[cn.left].right = cur;
@@ -278,6 +284,17 @@ namespace seam_carving {
 				}
 				if (cn.right == null && cn.down == null) {
 					_br = cur;
+				}
+			}
+			_recalc_path_side_energy<XN, XP>(p);
+		}
+		template <ptr_t _node::*XN, ptr_t _node::*XP> void _recalc_path_side_energy(ptr_t head) {
+			for (ptr_t cur = head; cur != null; cur = _n[cur].path_ptr) {
+				if (_n[cur].*XN != null) {
+					_calc_energy_elem(_n[cur].*XN);
+				}
+				if (_n[cur].*XP != null) {
+					_calc_energy_elem(_n[cur].*XP);
 				}
 			}
 		}
