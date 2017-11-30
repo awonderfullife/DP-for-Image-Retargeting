@@ -99,6 +99,11 @@ namespace seam_carving {
 			y = p.y;
 		}
 
+		void invalidate_visual() const {
+			InvalidateRect(_hwnd, nullptr, false);
+			UpdateWindow(_hwnd);
+		}
+
 		void show() {
 			ShowWindow(_hwnd, SW_SHOW);
 		}
@@ -186,9 +191,5 @@ namespace seam_carving {
 
 	inline bool is_key_down(int key) {
 		return GetAsyncKeyState(key) & 0x8000;
-	}
-	inline void get_xy_from_lparam(LPARAM lparam, int &x, int &y) {
-		x = static_cast<int>(GET_X_LPARAM(lparam));
-		y = static_cast<int>(GET_Y_LPARAM(lparam));
 	}
 }

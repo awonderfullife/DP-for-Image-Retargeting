@@ -48,7 +48,7 @@ namespace seam_carving {
 				_w = _h = 0;
 			}
 		}
-		dynamic_array2(dynamic_array2 &&src) : _w(src._w), _h(src._h), _ps(src._ps) {
+		dynamic_array2(dynamic_array2 &&src) : _ps(src._ps), _w(src._w), _h(src._h) {
 			src._w = src._h = 0;
 			src._ps = nullptr;
 		}

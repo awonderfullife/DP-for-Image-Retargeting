@@ -21,6 +21,24 @@ namespace seam_carving {
 		return static_cast<To>(v);
 	}
 
+	template <typename T> struct color_component_limits {
+		constexpr static std::enable_if_t<std::is_floating_point<T>::value, T> min = 0.0, max = 1.0;
+	};
+	template <> struct color_component_limits<unsigned char> {
+		constexpr static unsigned char min = 0, max = 255;
+	};
+
+	inline unsigned char blend_color_component(
+		unsigned char src, unsigned char srcf, unsigned char dst, unsigned char dstf
+	) {
+		return static_cast<unsigned char>((static_cast<int>(src) * srcf + static_cast<int>(dst) * dstf + 127) / 255);
+	}
+	template <typename RealType> inline std::enable_if_t<
+		std::is_floating_point<RealType>::value, RealType
+	> blend_color_component(RealType src, RealType srcf, RealType dst, RealType dstf) {
+		return src * srcf + dst * dstf;
+	}
+
 	template <typename Elem = unsigned char> struct color_rgb {
 		using element_type = Elem;
 
@@ -87,6 +105,7 @@ namespace seam_carving {
 
 	template <typename Elem = unsigned char> struct color_rgba {
 		using element_type = Elem;
+		using component_limits = color_component_limits<Elem>;
 
 		color_rgba() = default;
 		color_rgba(Elem rr, Elem gg, Elem bb, Elem aa) : r(rr), g(gg), b(bb), a(aa) {
@@ -148,6 +167,15 @@ namespace seam_carving {
 			return lhs /= rhs;
 		}
 
+		inline static color_rgba blend(color_rgba src, color_rgba dst) {
+			return color_rgba(
+				blend_color_component(src.r, src.a, dst.r, component_limits::max - src.a),
+				blend_color_component(src.g, src.a, dst.g, component_limits::max - src.a),
+				blend_color_component(src.b, src.a, dst.b, component_limits::max - src.a),
+				blend_color_component(src.a, src.a, dst.a, component_limits::max - src.a)
+			);
+		}
+
 		Elem r, g, b, a;
 	};
 	using color_rgba_u8 = color_rgba<unsigned char>;
@@ -163,10 +191,10 @@ namespace seam_carving {
 			result = image<To>(img.width(), img.height());
 		}
 		for (size_t y = 0; y < img.height(); ++y) {
-			const image<From>::element_type *src = img.at_y(y);
-			image<To>::element_type *dst = result.at_y(y);
+			const typename image<From>::element_type *src = img.at_y(y);
+			typename image<To>::element_type *dst = result.at_y(y);
 			for (size_t x = 0; x < img.width(); ++x, ++src, ++dst) {
-				*dst = src->cast<To::element_type>();
+				*dst = src->cast<typename To::element_type>();
 			}
 		}
 	}
