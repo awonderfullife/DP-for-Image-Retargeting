@@ -10,6 +10,7 @@ namespace seam_carving {
 		using real_t = float;
 		using color_t = color_rgba_u8;
 		using ptr_t = size_t;
+		using enlarge_table_t = std::vector<std::vector<std::pair<size_t, size_t>>>;
 
 		struct node {
 			real_t energy, dp, compensation = 0.0;
@@ -72,33 +73,13 @@ namespace seam_carving {
 		}
 		template <typename ColorProc = keep_original> image_rgba_u8 get_image() const {
 			image_rgba_u8 res(_w, _h);
-			traverse_nodes([this, &res](const node &n, color_rgba_u8 *&c) {
-				*c = ColorProc::process(n);
-				++c;
-				}, [this, &res](size_t y) {
-					return res.at_y(y);
-				});
+			_get_image_impl<ColorProc>(res);
 			return res;
 		}
 		template <typename ColorProc = keep_original> sys_image get_sys_image(HDC dc) const {
 			sys_image res(dc, _w, _h);
-			traverse_nodes([this, &res](const node &n, sys_color *&s) {
-				*s = sys_color(ColorProc::process(n));
-				++s;
-				}, [this, &res](size_t y) {
-					return res.at_y(_h - y - 1);
-				});
+			_get_image_impl<ColorProc>(res);
 			return res;
-		}
-		template <typename NodeCb, typename RowCb> void traverse_nodes(NodeCb &&ns, RowCb &&rows) const {
-			size_t yi = 0;
-			for (ptr_t y = _tl; y != null; y = _n[y].down, ++yi) {
-				auto &&v = rows(yi);
-				for (ptr_t x = y; x != null; x = _n[x].right) {
-					ns(_n[x], v);
-				}
-			}
-			assert(yi == _h);
 		}
 
 		ptr_t get_vertical_carve_path() {
@@ -200,11 +181,21 @@ namespace seam_carving {
 			return _n[p];
 		}
 
+		bool is_carved() const {
+			return _cps.size() > 0;
+		}
 		size_t current_width() const {
 			return _w;
 		}
 		size_t current_height() const {
 			return _h;
+		}
+
+		enlarge_table_t prepare_horizontal_enlarging() {
+			return _prepare_enlarging_impl<&node::left, &node::right, &node::up, &node::down>(_w, _h);
+		}
+		enlarge_table_t prepare_vertical_enlarging() {
+			return _prepare_enlarging_impl<&node::up, &node::down, &node::left, &node::right>(_h, _w);
 		}
 
 		void clear() {
@@ -259,36 +250,40 @@ namespace seam_carving {
 				ptr_t x = y;
 				node *xn = &_n[x], *xdn = &_n[xn->*YP];
 				xn->path_ptr = xn->*YP;
-				if (_n[xdn->*XN].dp < xdn->dp) {
-					xn->path_ptr = xdn->*XN;
-					xn->dp = _n[xn->path_ptr].dp;
-				} else {
-					xn->dp = xdn->dp;
-				}
-				xn->dp += xn->energy + xn->compensation;
-				for (x = xn->*XN, xn = &_n[x]; xn->*XN != null; x = xn->*XN, xn = &_n[x]) {
-					xdn = &_n[xn->*YP];
-					real_t mdpv = xdn->dp;
-					xn->path_ptr = xn->*YP;
-					if (_n[xdn->*XN].dp < mdpv) {
+				if (xn->*XN != null) {
+					if (_n[xdn->*XN].dp < xdn->dp) {
 						xn->path_ptr = xdn->*XN;
-						mdpv = _n[xdn->*XN].dp;
+						xn->dp = _n[xn->path_ptr].dp;
+					} else {
+						xn->dp = xdn->dp;
 					}
-					if (_n[xdn->*XP].dp < mdpv) {
+					xn->dp += xn->energy + xn->compensation;
+					for (x = xn->*XN, xn = &_n[x]; xn->*XN != null; x = xn->*XN, xn = &_n[x]) {
+						xdn = &_n[xn->*YP];
+						real_t mdpv = xdn->dp;
+						xn->path_ptr = xn->*YP;
+						if (_n[xdn->*XN].dp < mdpv) {
+							xn->path_ptr = xdn->*XN;
+							mdpv = _n[xdn->*XN].dp;
+						}
+						if (_n[xdn->*XP].dp < mdpv) {
+							xn->path_ptr = xdn->*XP;
+							mdpv = _n[xdn->*XP].dp;
+						}
+						xn->dp = mdpv + xn->energy + xn->compensation;
+					}
+					xdn = &_n[xn->*YP];
+					xn->path_ptr = xn->*YP;
+					if (_n[xdn->*XP].dp < xdn->dp) {
 						xn->path_ptr = xdn->*XP;
-						mdpv = _n[xdn->*XP].dp;
+						xn->dp = _n[xn->path_ptr].dp;
+					} else {
+						xn->dp = xdn->dp;
 					}
-					xn->dp = mdpv + xn->energy + xn->compensation;
-				}
-				xdn = &_n[xn->*YP];
-				xn->path_ptr = xn->*YP;
-				if (_n[xdn->*XP].dp < xdn->dp) {
-					xn->path_ptr = xdn->*XP;
-					xn->dp = _n[xn->path_ptr].dp;
+					xn->dp += xn->energy + xn->compensation;
 				} else {
-					xn->dp = xdn->dp;
+					xn->dp = xdn->dp + xn->energy + xn->compensation;
 				}
-				xn->dp += xn->energy + xn->compensation;
 			}
 			ptr_t res = _tl;
 			for (ptr_t cur = _n[_tl].*XP; cur != null; cur = _n[cur].*XP) {
@@ -344,6 +339,42 @@ namespace seam_carving {
 					_calc_energy_elem(_n[cur].*XP);
 				}
 			}
+		}
+
+		template <typename ColorProc, typename Img> void _get_image_impl(Img &img) const {
+			size_t yi = 0;
+			for (ptr_t y = _tl; y != null; y = _n[y].down, ++yi) {
+				Img::element_type *dst = img.at_y(yi);
+				for (ptr_t x = y; x != null; x = _n[x].right, ++dst) {
+					*dst = Img::element_type(ColorProc::process(_n[x]));
+				}
+			}
+			assert(yi == _h);
+		}
+
+		template <
+			ptr_t node::*XN, ptr_t node::*XP, ptr_t node::*YN, ptr_t node::*YP
+		> enlarge_table_t _prepare_enlarging_impl(size_t wv, size_t hv) {
+			assert(_cps.size() == 0);
+			enlarge_table_t table;
+			std::vector<ptr_t> heads;
+			table.reserve(wv);
+			heads.reserve(wv);
+			for (size_t i = 0; i < wv; ++i) {
+				std::vector<std::pair<size_t, size_t>> cpath;
+				cpath.reserve(hv);
+				ptr_t path = _get_carve_path_impl<XN, XP, YN, YP>();
+				heads.push_back(path);
+				for (ptr_t c = path; c != null; c = _n[c].path_ptr) {
+					cpath.push_back({c % _w, c / _w});
+				}
+				_carve_path_impl<XN, XP, YN, YP>(path);
+				table.push_back(std::move(cpath));
+			}
+			for (auto i = heads.rbegin(); i != heads.rend(); ++i) {
+				_restore_path_impl<XN, XP>(*i);
+			}
+			return table;
 		}
 
 		std::vector<node> _n;

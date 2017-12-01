@@ -22,6 +22,128 @@ image_rgba_u8 orig_img;
 retargeter_t retargeter;
 sys_image simg;
 
+enum class enlarge_status {
+	none,
+	horizontal,
+	vertical
+};
+struct image_enlarger {
+public:
+	void prepare(retargeter_t::enlarge_table_t tbl, enlarge_status t) {
+		table = std::move(tbl);
+		repeat = dynamic_array2<bool>(orig_img.width(), orig_img.height());
+		repeat.memset(false);
+		enlarged_size = 0;
+		type = t;
+	}
+
+	bool can_enlarge() const {
+		return enlarged_size < table.size();
+	}
+	void enlarge() {
+		for (auto &&pair : table[enlarged_size]) {
+			repeat.at(pair.first, pair.second) = true;
+		}
+		++enlarged_size;
+	}
+	bool can_shrink() const {
+		return enlarged_size > 0;
+	}
+	void shrink() {
+		--enlarged_size;
+		for (auto &&pair : table[enlarged_size]) {
+			repeat.at(pair.first, pair.second) = false;
+		}
+	}
+	void retarget(size_t w, size_t h) {
+		size_t ev, et;
+		if (type == enlarge_status::horizontal) {
+			ev = orig_img.width();
+			et = w;
+		} else if (type == enlarge_status::vertical) {
+			ev = orig_img.height();
+			et = h;
+		}
+		if (can_enlarge() && ev + enlarged_size < et) {
+			do {
+				enlarge();
+			} while (can_enlarge() && ev + enlarged_size < et);
+		} else if (can_shrink() && ev + enlarged_size > et) {
+			do {
+				shrink();
+			} while (can_shrink() && ev + enlarged_size > et);
+		}
+	}
+
+	sys_image get_sys_image(HDC dc) const {
+		return type == enlarge_status::horizontal ? get_sys_image_horizontal(dc) : get_sys_image_vertical(dc);
+	}
+	image_rgba_u8 get_image() const {
+		return type == enlarge_status::horizontal ? get_image_horizontal() : get_image_vertical();
+	}
+
+	sys_image get_sys_image_horizontal(HDC dc) const {
+		sys_image img(dc, orig_img.width() + enlarged_size, orig_img.height());
+		_get_image_horizontal_impl(img);
+		return img;
+	}
+	image_rgba_u8 get_image_horizontal() const {
+		image_rgba_u8 img(orig_img.width() + enlarged_size, orig_img.height());
+		_get_image_horizontal_impl(img);
+		return img;
+	}
+
+	sys_image get_sys_image_vertical(HDC dc) const {
+		sys_image img(dc, orig_img.width(), orig_img.height() + enlarged_size);
+		_get_image_vertical_impl(img);
+		return img;
+	}
+	image_rgba_u8 get_image_vertical() const {
+		image_rgba_u8 img(orig_img.width(), orig_img.height() + enlarged_size);
+		_get_image_vertical_impl(img);
+		return img;
+	}
+
+	size_t current_width() const {
+		return orig_img.width() + (type == enlarge_status::horizontal ? enlarged_size : 0);
+	}
+	size_t current_height() const {
+		return orig_img.height() + (type == enlarge_status::vertical ? enlarged_size : 0);
+	}
+
+	retargeter_t::enlarge_table_t table;
+	dynamic_array2<bool> repeat;
+	size_t enlarged_size = 0;
+	enlarge_status type = enlarge_status::none;
+protected:
+	template <typename Img> void _get_image_horizontal_impl(Img &img) const {
+		for (size_t y = 0; y < orig_img.height(); ++y) {
+			const color_rgba_u8 *src = orig_img.at_y(y);
+			Img::element_type *dst = img.at_y(y);
+			const bool *rep = repeat.at_y(y);
+			for (size_t x = 0; x < orig_img.width(); ++x, ++src, ++dst, ++rep) {
+				*dst = Img::element_type(*src);
+				if (*rep) {
+					dst[1] = dst[0];
+					++dst;
+				}
+			}
+		}
+	}
+	template <typename Img> void _get_image_vertical_impl(Img &img) const {
+		for (size_t x = 0; x < orig_img.width(); ++x) {
+			for (size_t y = 0, dy = 0; y < orig_img.height(); ++y, ++dy) {
+				img.at(x, dy) = Img::element_type(orig_img.at(x, y));
+				if (repeat.at(x, y)) {
+					img.at(x, dy + 1) = img.at(x, dy);
+					++dy;
+				}
+			}
+		}
+	}
+};
+
+image_enlarger enlarger;
 bool show_help = true, show_compensation = true;
 size_t brush_rad = 10, lastx = 0, lasty = 0;
 
@@ -37,16 +159,23 @@ constexpr char help_message[] =
 "K: Restore a horizontal seam\n"
 "L: Restore a vertical seam\n"
 "\n"
+"H: Prepare horizontal enlarging\n"
+"V: Prepare vertical enlarging\n"
+"\n"
 "Left Mouse Button: Paint excluded region\n"
 "Right Mouse Button: Paint favored region\n"
 "A / Z: Increase / decrease paint brush radius (currently %u)\n";
 
 void refresh_displayed_image() {
 #ifdef USE_DL_CARVER
-	if (show_compensation) {
-		simg = retargeter.get_sys_image<retargeter_t::blend_compensation>(main_window.get_dc());
+	if (enlarger.type == enlarge_status::none) {
+		if (show_compensation) {
+			simg = retargeter.get_sys_image<retargeter_t::blend_compensation>(main_window.get_dc());
+		} else {
+			simg = retargeter.get_sys_image<>(main_window.get_dc());
+		}
 	} else {
-		simg = retargeter.get_sys_image<>(main_window.get_dc());
+		simg = enlarger.get_sys_image(main_window.get_dc());
 	}
 #else
 	generate_sys_image(retargeter.get_image());
@@ -54,7 +183,11 @@ void refresh_displayed_image() {
 	main_window.invalidate_visual();
 }
 void fit_image_size() {
-	main_window.set_client_size(retargeter.current_width(), retargeter.current_height());
+	main_window.set_client_size(simg.width(), simg.height());
+}
+
+std::chrono::high_resolution_clock::time_point now() {
+	return std::chrono::high_resolution_clock::now();
 }
 
 void restrict_size(bool adjfirst, bool adjsecond, LONG &f, LONG &s, size_t delta, size_t min, size_t max) {
@@ -83,32 +216,44 @@ void restrict_size(int adjustdir, RECT &r, size_t dw, size_t dh, size_t minw, si
 	restrict_size(resize_edges[adjustdir][1], resize_edges[adjustdir][3], r.top, r.bottom, dh, minh, maxh);
 }
 
-template <typename T> inline T get_sqr_ptln_distance(T x1, T y1, T x2, T y2, T px, T py) {
-	T dx = x2 - x1, dy = y2 - y1;
-	// ccw 90: -dy, dx
-	T pdx = px - x1, pdy = py - y1;
+void set_cursor(int cursor) {
+	HANDLE img = LoadImage(
+		nullptr, MAKEINTRESOURCE(cursor),
+		IMAGE_CURSOR, 0, 0, LR_SHARED | LR_DEFAULTSIZE
+	);
+	SetCursor(static_cast<HCURSOR>(img));
+}
+
+template <typename T> inline bool hit_test_capsule(T x1, T y1, T x2, T y2, T px, T py, T rad) {
+	rad *= rad;
+	T dx = x2 - x1, dy = y2 - y1, pdx = px - x1, pdy = py - y1;
 	if (-dy * pdy - dx * pdx >= 0) {
-		return pdx * pdx + pdy * pdy;
+		return pdx * pdx + pdy * pdy < rad;
 	}
 	pdx = px - x2, pdy = py - y2;
-	// ccw 90: dy, -dx
 	if (dy * pdy + dx * pdx >= 0) {
-		return pdx * pdx + pdy * pdy;
+		return pdx * pdx + pdy * pdy < rad;
 	}
 	T res = pdx * dy - pdy * dx;
 	res *= res;
-	return res / (dx * dx + dy * dy);
+	return res < (dx * dx + dy * dy) * rad;
 }
-void paint_compensate_region(size_t x, size_t y, retargeter_t::real_t v) {
+void paint_compensate_region(size_t x1, size_t y1, size_t x2, size_t y2, retargeter_t::real_t v) {
 	size_t
-		ymin = std::max(std::min(y, lasty), brush_rad) - brush_rad,
-		ymax = std::min(std::max(y, lasty) + brush_rad + 1, retargeter.current_height()),
-		xmin = std::max(std::min(x, lastx), brush_rad) - brush_rad,
-		xmax = std::min(std::max(x, lastx) + brush_rad + 1, retargeter.current_width());
-	for (size_t yp = ymin; yp < ymax; ++yp) {
-		for (size_t xp = xmin; xp < xmax; ++xp) {
-			if (get_sqr_ptln_distance<long long>(x, y, lastx, lasty, xp, yp) < brush_rad * brush_rad) {
-				retargeter.deref(retargeter.at(xp, yp)).compensation = v;
+		ymin = std::max(std::min(y1, y2), brush_rad) - brush_rad,
+		ymax = std::min(std::max(y1, y2) + brush_rad + 1, retargeter.current_height()),
+		xmin = std::max(std::min(x1, x2), brush_rad) - brush_rad,
+		xmax = std::min(std::max(x1, x2) + brush_rad + 1, retargeter.current_width());
+	retargeter_t::ptr_t ynode = retargeter.at(xmin, ymin);
+	for (size_t yp = ymin; yp < ymax; ++yp, ynode = retargeter.deref(ynode).down) {
+		bool had = false;
+		retargeter_t::ptr_t curptr = ynode;
+		for (size_t xp = xmin; xp < xmax; ++xp, curptr = retargeter.deref(curptr).right) {
+			if (hit_test_capsule<long long>(x1, y1, x2, y2, xp, yp, brush_rad)) {
+				retargeter.deref(curptr).compensation = v;
+				had = true;
+			} else if (had) {
+				break;
 			}
 		}
 	}
@@ -135,7 +280,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				nr.left = 10;
 				nr.top = 10;
 				char tmp[1000];
-				snprintf(tmp, 1000, help_message, show_compensation ? "on" : "off", brush_rad);
+				std::snprintf(tmp, sizeof(tmp), help_message, show_compensation ? "on" : "off", brush_rad);
 				DrawTextA(bdc, tmp, -1, &nr, DT_TOP | DT_LEFT);
 			}
 
@@ -153,9 +298,15 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 			size_t
 				xdiff = wndr.right - wndr.left - clientr.right, ydiff = wndr.bottom - wndr.top - clientr.bottom,
 				width = std::max<size_t>(2, r.right - r.left - xdiff), height = std::max<size_t>(2, r.bottom - r.top - ydiff);
-			retargeter.retarget(width, height);
-			restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, 2, retargeter.current_width(), 2, retargeter.current_height());
-			refresh_displayed_image();
+			if (enlarger.type == enlarge_status::none) {
+				retargeter.retarget(width, height);
+				restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, 2, retargeter.current_width(), 2, retargeter.current_height());
+				refresh_displayed_image();
+			} else {
+				enlarger.retarget(width, height);
+				restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, orig_img.width(), enlarger.current_width(), orig_img.height(), enlarger.current_height());
+				refresh_displayed_image();
+			}
 		}
 		return TRUE;
 	case WM_KEYDOWN:
@@ -171,37 +322,66 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				break;
 
 			case 'R':
+				enlarger.type = enlarge_status::none;
 				retargeter.set_image(orig_img);
-				fit_image_size();
 				refresh_displayed_image();
+				fit_image_size();
 				break;
 			case 'S':
 				{
-					image_rgba_u8 img = retargeter.get_image<>();
-					retargeter.set_image(img);
+					enlarger.type = enlarge_status::none;
+					orig_img = retargeter.get_image<>();
+					retargeter.set_image(orig_img);
 					refresh_displayed_image();
 				}
 				break;
 
 			case 'I':
 				retargeter.retarget(retargeter.current_width(), retargeter.current_height() - 1);
-				fit_image_size();
 				refresh_displayed_image();
+				fit_image_size();
 				break;
 			case 'J':
 				retargeter.retarget(retargeter.current_width() - 1, retargeter.current_height());
-				fit_image_size();
 				refresh_displayed_image();
+				fit_image_size();
 				break;
 			case 'K':
 				retargeter.retarget(retargeter.current_width(), retargeter.current_height() + 1);
-				fit_image_size();
 				refresh_displayed_image();
+				fit_image_size();
 				break;
 			case 'L':
 				retargeter.retarget(retargeter.current_width() + 1, retargeter.current_height());
-				fit_image_size();
 				refresh_displayed_image();
+				fit_image_size();
+				break;
+
+			case 'H':
+				if (retargeter.is_carved() || enlarger.type != enlarge_status::none) {
+					MessageBox(main_window.get_handle(), TEXT("The image must be at its original state"), TEXT("Error"), MB_OK);
+				} else {
+					auto begt = now();
+					set_cursor(OCR_WAIT);
+					enlarger.prepare(retargeter.prepare_horizontal_enlarging(), enlarge_status::horizontal);
+					double dur = std::chrono::duration<double>(now() - begt).count();
+					char msg[50];
+					std::snprintf(msg, sizeof(msg), "Preparation cmoplete\nTime usage: %lfs", dur);
+					MessageBoxA(main_window.get_handle(), msg, "Info", MB_OK);
+				}
+				break;
+			case 'V':
+				if (retargeter.is_carved() || enlarger.type != enlarge_status::none) {
+					MessageBox(main_window.get_handle(), TEXT("The image must be at its original state"), TEXT("Error"), MB_OK);
+				} else {
+					auto begt = now();
+					set_cursor(OCR_WAIT);
+					enlarger.prepare(retargeter.prepare_vertical_enlarging(), enlarge_status::vertical);
+					double dur = std::chrono::duration<double>(now() - begt).count();
+					char msg[50];
+					std::snprintf(msg, sizeof(msg), "Preparation cmoplete\nTime usage: %lfs", dur);
+					MessageBoxA(main_window.get_handle(), msg, "Info", MB_OK);
+				}
 				break;
 
 			case 'A':
@@ -224,9 +404,9 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				size_t x = static_cast<size_t>(rx), y = static_cast<size_t>(ry);
 				if (x < retargeter.current_width() && y < retargeter.current_height()) {
 					if (wparam & MK_LBUTTON) {
-						paint_compensate_region(x, y, std::numeric_limits<retargeter_t::real_t>::infinity());
+						paint_compensate_region(lastx, lasty, x, y, std::numeric_limits<retargeter_t::real_t>::infinity());
 					} else if (wparam & MK_RBUTTON) {
-						paint_compensate_region(x, y, -200000.0); // TODO magik!
+						paint_compensate_region(lastx, lasty, x, y, -200000.0); // TODO magik!
 					}
 					lastx = x;
 					lasty = y;
@@ -246,10 +426,10 @@ int main() {
 	fnt = font::get_default();
 
 	image_loader loader;
-	orig_img = loader.load_image(L"image.jpg");
+	orig_img = loader.load_image(L"image.png");
 	retargeter.set_image(orig_img);
-	fit_image_size();
 	refresh_displayed_image();
+	fit_image_size();
 
 	main_window.show();
 	while (window::wait_message_all()) {

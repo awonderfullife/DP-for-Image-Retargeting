@@ -308,6 +308,8 @@ namespace seam_carving {
 
 	class sys_image {
 	public:
+		using element_type = sys_color;
+
 		sys_image() = default;
 		sys_image(HDC hdc, size_t w, size_t h) : _w(w), _h(h), _dc(CreateCompatibleDC(hdc)) {
 			BITMAPINFO info;
@@ -356,11 +358,11 @@ namespace seam_carving {
 			return _arr;
 		}
 		sys_color *at_y(size_t y) {
-			return _arr + (_w * y);
+			return _arr + (_w * (_h - y - 1));
 		}
 		sys_color &at(size_t x, size_t y) {
 			assert(x < _w && y < _h);
-			return _arr[_w * y + x];
+			return at_y(y)[x];
 		}
 
 		HDC get_dc() const {

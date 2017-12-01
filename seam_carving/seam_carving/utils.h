@@ -74,6 +74,10 @@ namespace seam_carving {
 			return _ps;
 		}
 
+		void memset(int v) {
+			std::memset(data(), v, sizeof(Elem) * _w * _h);
+		}
+
 		Elem &at(size_t x, size_t y) {
 			assert(x < _w && y < _h);
 			return _ps[y * _w + x];
