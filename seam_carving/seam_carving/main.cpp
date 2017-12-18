@@ -166,7 +166,7 @@ constexpr char help_message[] =
 "Right Mouse Button: Paint favored region\n"
 "A / Z: Increase / decrease paint brush radius (currently %u)\n";
 
-void refresh_displayed_image() {
+void refresh_displayed_image(bool repaint) {
 #ifdef USE_DL_CARVER
 	if (enlarger.type == enlarge_status::none) {
 		if (show_compensation) {
@@ -180,10 +180,13 @@ void refresh_displayed_image() {
 #else
 	generate_sys_image(retargeter.get_image());
 #endif
-	main_window.invalidate_visual();
+	if (repaint) {
+		main_window.invalidate_visual();
+	}
 }
 void fit_image_size() {
 	main_window.set_client_size(simg.width(), simg.height());
+	main_window.invalidate_visual();
 }
 
 std::chrono::high_resolution_clock::time_point now() {
@@ -202,14 +205,14 @@ void restrict_size(bool adjfirst, bool adjsecond, LONG &f, LONG &s, size_t delta
 const bool resize_edges[][4] = {
 	// left, top, right, bottom
 	{false, false, false, false},
-	{true, false, false, false},
-	{false, false, true, false},
-	{false, true, false, false},
-	{true, true, false, false},
-	{false, true, true, false},
-	{false, false, false, true},
-	{true, false, false, true},
-	{false, false, true, true}
+{true, false, false, false},
+{false, false, true, false},
+{false, true, false, false},
+{true, true, false, false},
+{false, true, true, false},
+{false, false, false, true},
+{true, false, false, true},
+{false, false, true, true}
 };
 void restrict_size(int adjustdir, RECT &r, size_t dw, size_t dh, size_t minw, size_t maxw, size_t minh, size_t maxh) {
 	restrict_size(resize_edges[adjustdir][0], resize_edges[adjustdir][2], r.left, r.right, dw, minw, maxw);
@@ -257,7 +260,7 @@ void paint_compensate_region(size_t x1, size_t y1, size_t x2, size_t y2, retarge
 			}
 		}
 	}
-	refresh_displayed_image();
+	refresh_displayed_image(true);
 }
 
 LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
@@ -301,11 +304,11 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 			if (enlarger.type == enlarge_status::none) {
 				retargeter.retarget(width, height);
 				restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, 2, retargeter.current_width(), 2, retargeter.current_height());
-				refresh_displayed_image();
+				refresh_displayed_image(true);
 			} else {
 				enlarger.retarget(width, height);
 				restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, orig_img.width(), enlarger.current_width(), orig_img.height(), enlarger.current_height());
-				refresh_displayed_image();
+				refresh_displayed_image(true);
 			}
 		}
 		return TRUE;
@@ -318,13 +321,13 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				break;
 			case 'C':
 				show_compensation = !show_compensation;
-				refresh_displayed_image();
+				refresh_displayed_image(true);
 				break;
 
 			case 'R':
 				enlarger.type = enlarge_status::none;
 				retargeter.set_image(orig_img);
-				refresh_displayed_image();
+				refresh_displayed_image(false);
 				fit_image_size();
 				break;
 			case 'S':
@@ -332,28 +335,28 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 					enlarger.type = enlarge_status::none;
 					orig_img = retargeter.get_image<>();
 					retargeter.set_image(orig_img);
-					refresh_displayed_image();
+					refresh_displayed_image(true);
 				}
 				break;
 
 			case 'I':
 				retargeter.retarget(retargeter.current_width(), retargeter.current_height() - 1);
-				refresh_displayed_image();
+				refresh_displayed_image(false);
 				fit_image_size();
 				break;
 			case 'J':
 				retargeter.retarget(retargeter.current_width() - 1, retargeter.current_height());
-				refresh_displayed_image();
+				refresh_displayed_image(false);
 				fit_image_size();
 				break;
 			case 'K':
 				retargeter.retarget(retargeter.current_width(), retargeter.current_height() + 1);
-				refresh_displayed_image();
+				refresh_displayed_image(false);
 				fit_image_size();
 				break;
 			case 'L':
 				retargeter.retarget(retargeter.current_width() + 1, retargeter.current_height());
-				refresh_displayed_image();
+				refresh_displayed_image(false);
 				fit_image_size();
 				break;
 
@@ -418,17 +421,28 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 	return DefWindowProc(hwnd, msg, wparam, lparam);
 }
 
-int main() {
+int main(int argc, char **argv) {
+	if (argc != 2) {
+		MessageBox(nullptr, TEXT("Usage: seam_carving [filename]"), TEXT("Usage"), MB_OK);
+		return 0;
+	}
+
 	main_window = window(
 		TEXT("main_window"), main_window_proc,
 		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX
 	);
 	fnt = font::get_default();
 
-	image_loader loader;
-	orig_img = loader.load_image(L"image.png");
+	{
+		size_t nc = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, nullptr, 0);
+		LPWSTR str = new WCHAR[nc];
+		MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, str, nc);
+		image_loader loader;
+		orig_img = loader.load_image(reinterpret_cast<LPCWSTR>(str));
+		delete[] str;
+	}
 	retargeter.set_image(orig_img);
-	refresh_displayed_image();
+	refresh_displayed_image(false);
 	fit_image_size();
 
 	main_window.show();
