@@ -241,8 +241,10 @@ namespace seam_carving {
 			const color_rgba_r &up, const color_rgba_r &down
 		) {
 			color_rgba_r hor = right - left, vert = up - down;
-			return squared(hor.r) + squared(hor.g) + squared(hor.b) + squared(vert.r) + squared(vert.g) + squared(vert.b);
+			return std::sqrt(squared(hor.r) + squared(hor.g) + squared(hor.b) + squared(vert.r) + squared(vert.g) + squared(vert.b));
 		}
+#define ENERGY_FUNC 0
+#if ENERGY_FUNC == 0
 		void _calc_energy_row(
 			const color_rgba_r *l,
 			const color_rgba_r *u, const color_rgba_r *d,
@@ -266,6 +268,43 @@ namespace seam_carving {
 			size_t y = _carve_img.height() - 1;
 			_calc_energy_row(_carve_img[y], _carve_img[y - 1], _carve_img[y], _energy[y]);
 		}
+#elif ENERGY_FUNC == 1
+		void _calc_energy() {
+			assert(_carve_img.height() > 1 && _carve_img.width() > 1);
+			_energy = dynamic_array2<real_t>(_carve_img.width(), _carve_img.height());
+			for (int x = 0; x < _carve_img.width(); ++x)
+				for (int y = 0; y < _carve_img.height(); ++y) {
+					int up1 = y - 1 > 0 ? y - 1 : y;
+					int up2 = y - 2 > 0 ? y - 2 : y;
+					int down1 = y + 1 < _carve_img.height() ? y + 1 : y;
+					int down2 = y + 2 < _carve_img.height() ? y + 2 : y;
+					int left1 = x - 1 > 0 ? x - 1 : x;
+					int left2 = x - 2 > 0 ? x - 2 : x;
+					int right1 = x + 1 < _carve_img.width() ? x + 1 : x;
+					int right2 = x + 2 < _carve_img.width() ? x + 2 : x;
+					_energy.at(x, y) = _calc_energy_elem((_carve_img.at(left1,y) + _carve_img.at(left2, y)) / 2, (_carve_img.at(right1, y) + _carve_img.at(right2, y)) / 2,
+						(_carve_img.at(x, up1) + _carve_img.at(x, up2)) / 2, (_carve_img.at(x, down1) + _carve_img.at(x, down2)) / 2);
+				}
+		}
+#elif ENERGY_FUNC == 2
+		void _calc_energy() {
+			assert(_carve_img.height() > 1 && _carve_img.width() > 1);
+			_energy = dynamic_array2<real_t>(_carve_img.width(), _carve_img.height());
+			color_rgba_f aveg;
+			for (int x = 0; x < _carve_img.width(); ++x)
+				for (int y = 0; y < _carve_img.height(); ++y) {
+					aveg += _carve_img.at(x, y);
+				}
+			aveg = aveg / (_carve_img.width()*_carve_img.height());
+
+			auto temp = aveg;
+			for (int x = 0; x < _carve_img.width(); ++x)
+				for (int y = 0; y < _carve_img.height(); ++y) {
+					temp = aveg - _carve_img.at(x, y);
+					_energy.at(x, y) = sqrt(squared(temp.r) + squared(temp.g) + squared(temp.b));
+				}
+		}
+#endif
 	};
 
 	class dynamic_retargeter {
@@ -308,7 +347,8 @@ namespace seam_carving {
 						_carved.push_back(std::move(path));
 					}
 				}
-			} else {
+			}
+			else {
 				while (_carved.size() > 0 && (
 					(w > _curimg.width() && _carved.back().path_orientation == orientation::vertical) ||
 					(h > _curimg.height() && _carved.back().path_orientation == orientation::horizontal)

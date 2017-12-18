@@ -7,7 +7,7 @@
 
 using namespace seam_carving;
 
-#define USE_DL_CARVER
+//#define USE_DL_CARVER
 
 #ifdef USE_DL_CARVER
 using retargeter_t = dancing_link_retargeter;
@@ -22,6 +22,7 @@ image_rgba_u8 orig_img;
 retargeter_t retargeter;
 sys_image simg;
 
+#ifdef USE_DL_CARVER
 enum class enlarge_status {
 	none,
 	horizontal,
@@ -144,6 +145,8 @@ protected:
 };
 
 image_enlarger enlarger;
+#endif
+
 bool show_help = true, show_compensation = true;
 size_t brush_rad = 10, lastx = 0, lasty = 0;
 
@@ -178,7 +181,9 @@ void refresh_displayed_image(bool repaint) {
 		simg = enlarger.get_sys_image(main_window.get_dc());
 	}
 #else
-	generate_sys_image(retargeter.get_image());
+	auto img = retargeter.get_image();
+	simg = sys_image(main_window.get_dc(), img.width(), img.height());
+	simg.copy_from_image(img);
 #endif
 	if (repaint) {
 		main_window.invalidate_visual();
@@ -241,6 +246,7 @@ template <typename T> inline bool hit_test_capsule(T x1, T y1, T x2, T y2, T px,
 	res *= res;
 	return res < (dx * dx + dy * dy) * rad;
 }
+#ifdef USE_DL_CARVER
 void paint_compensate_region(size_t x1, size_t y1, size_t x2, size_t y2, retargeter_t::real_t v) {
 	size_t
 		ymin = std::max(std::min(y1, y2), brush_rad) - brush_rad,
@@ -262,6 +268,7 @@ void paint_compensate_region(size_t x1, size_t y1, size_t x2, size_t y2, retarge
 	}
 	refresh_displayed_image(true);
 }
+#endif
 
 LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	switch (msg) {
@@ -301,6 +308,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 			size_t
 				xdiff = wndr.right - wndr.left - clientr.right, ydiff = wndr.bottom - wndr.top - clientr.bottom,
 				width = std::max<size_t>(2, r.right - r.left - xdiff), height = std::max<size_t>(2, r.bottom - r.top - ydiff);
+#ifdef USE_DL_CARVER
 			if (enlarger.type == enlarge_status::none) {
 				retargeter.retarget(width, height);
 				restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, 2, retargeter.current_width(), 2, retargeter.current_height());
@@ -310,6 +318,11 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, orig_img.width(), enlarger.current_width(), orig_img.height(), enlarger.current_height());
 				refresh_displayed_image(true);
 			}
+#else
+			retargeter.retarget(width, height);
+			restrict_size(static_cast<int>(wparam), r, xdiff, ydiff, 2, retargeter.current_width(), 2, retargeter.current_height());
+			refresh_displayed_image(true);
+#endif
 		}
 		return TRUE;
 	case WM_KEYDOWN:
@@ -324,6 +337,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				refresh_displayed_image(true);
 				break;
 
+#ifdef USE_DL_CARVER
 			case 'R':
 				enlarger.type = enlarge_status::none;
 				retargeter.set_image(orig_img);
@@ -338,6 +352,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 					refresh_displayed_image(true);
 				}
 				break;
+#endif
 
 			case 'I':
 				retargeter.retarget(retargeter.current_width(), retargeter.current_height() - 1);
@@ -360,6 +375,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				fit_image_size();
 				break;
 
+#ifdef USE_DL_CARVER
 			case 'H':
 				if (retargeter.is_carved() || enlarger.type != enlarge_status::none) {
 					MessageBox(main_window.get_handle(), TEXT("The image must be at its original state"), TEXT("Error"), MB_OK);
@@ -386,6 +402,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 					MessageBoxA(main_window.get_handle(), msg, "Info", MB_OK);
 				}
 				break;
+#endif
 
 			case 'A':
 				++brush_rad;
@@ -400,6 +417,8 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 			}
 		}
 		return 0;
+
+#ifdef USE_DL_CARVER
 	case WM_MOUSEMOVE:
 		{
 			int rx = GET_X_LPARAM(lparam), ry = GET_Y_LPARAM(lparam);
@@ -417,6 +436,7 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 			}
 		}
 		return 0;
+#endif
 	}
 	return DefWindowProc(hwnd, msg, wparam, lparam);
 }
