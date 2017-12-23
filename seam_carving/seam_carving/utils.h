@@ -112,4 +112,8 @@ namespace seam_carving {
 		Elem *_ps = nullptr;
 		size_t _w = 0, _h = 0;
 	};
+
+	inline std::chrono::high_resolution_clock::time_point now() {
+		return std::chrono::high_resolution_clock::now();
+	}
 }

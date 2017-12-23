@@ -1,5 +1,6 @@
 #pragma once
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
@@ -12,12 +13,14 @@ namespace seam_carving {
 	> cast_color_component(unsigned char v) {
 		return static_cast<RealType>(v) / 255;
 	}
-	template <typename RealType> inline std::enable_if_t<
-		std::is_floating_point<RealType>::value, unsigned char
+	template <typename UC = unsigned char, typename RealType> inline std::enable_if_t<
+		std::is_same<UC, unsigned char>::value && std::is_floating_point<RealType>::value, unsigned char
 	> cast_color_component(RealType v) {
 		return static_cast<unsigned char>(std::round(v * 255));
 	}
-	template <typename From, typename To> inline To cast_color_component(From v) {
+	template <typename To, typename From> inline std::enable_if_t<
+		std::is_floating_point<From>::value && std::is_floating_point<To>::value, To
+	> cast_color_component(From v) {
 		return static_cast<To>(v);
 	}
 
@@ -48,9 +51,9 @@ namespace seam_carving {
 
 		template <typename To> color_rgb<To> cast() const {
 			return color_rgb<To>(
-				cast_color_component<Elem, To>(r),
-				cast_color_component<Elem, To>(g),
-				cast_color_component<Elem, To>(b)
+				cast_color_component<To>(r),
+				cast_color_component<To>(g),
+				cast_color_component<To>(b)
 				);
 		}
 
@@ -113,10 +116,10 @@ namespace seam_carving {
 
 		template <typename To> color_rgba<To> cast() const {
 			return color_rgba<To>(
-				cast_color_component<Elem, To>(r),
-				cast_color_component<Elem, To>(g),
-				cast_color_component<Elem, To>(b),
-				cast_color_component<Elem, To>(a)
+				cast_color_component<To>(r),
+				cast_color_component<To>(g),
+				cast_color_component<To>(b),
+				cast_color_component<To>(a)
 				);
 		}
 
@@ -236,7 +239,7 @@ namespace seam_carving {
 			return result;
 		}
 	protected:
-		IWICImagingFactory *_factory = nullptr;
+		IWICImagingFactory * _factory = nullptr;
 		com_usage _uses_com;
 	};
 
@@ -370,10 +373,11 @@ namespace seam_carving {
 		}
 
 		void copy_from_image(const image<color_rgba_u8> &img, size_t x = 0, size_t y = 0) {
-			for (size_t dy = 0; dy < img.height(); ++dy) {
-				sys_color *cptr = _arr + ((y + dy) * _w + x);
+			size_t xend = std::min(width(), x + img.width()), yend = std::min(height(), y + img.height());
+			for (size_t yv = y, dy = 0; yv < yend; ++yv, ++dy) {
+				sys_color *cptr = _arr + (yv * width() + x);
 				const color_rgba_u8 *orig = img.at_y(img.height() - dy - 1);
-				for (size_t dx = 0; dx < img.width(); ++dx, ++cptr, ++orig) {
+				for (size_t xv = x; xv < xend; ++xv, ++cptr, ++orig) {
 					*cptr = sys_color(*orig);
 				}
 			}

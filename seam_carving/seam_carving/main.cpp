@@ -7,7 +7,7 @@
 
 using namespace seam_carving;
 
-//#define USE_DL_CARVER
+#define USE_DL_CARVER
 
 #ifdef USE_DL_CARVER
 using retargeter_t = dancing_link_retargeter;
@@ -194,10 +194,6 @@ void fit_image_size() {
 	main_window.invalidate_visual();
 }
 
-std::chrono::high_resolution_clock::time_point now() {
-	return std::chrono::high_resolution_clock::now();
-}
-
 void restrict_size(bool adjfirst, bool adjsecond, LONG &f, LONG &s, size_t delta, size_t min, size_t max) {
 	size_t cursz = s - f - delta;
 	cursz = (cursz > max ? max : (cursz < min ? min : cursz));
@@ -337,22 +333,26 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				refresh_displayed_image(true);
 				break;
 
-#ifdef USE_DL_CARVER
 			case 'R':
+#ifdef USE_DL_CARVER
 				enlarger.type = enlarge_status::none;
+#endif
 				retargeter.set_image(orig_img);
 				refresh_displayed_image(false);
 				fit_image_size();
 				break;
 			case 'S':
 				{
+#ifdef USE_DL_CARVER
 					enlarger.type = enlarge_status::none;
 					orig_img = retargeter.get_image<>();
+#else
+					orig_img = retargeter.get_image();
+#endif
 					retargeter.set_image(orig_img);
 					refresh_displayed_image(true);
 				}
 				break;
-#endif
 
 			case 'I':
 				retargeter.retarget(retargeter.current_width(), retargeter.current_height() - 1);
