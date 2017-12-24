@@ -99,6 +99,10 @@ namespace seam_carving {
 			return res;
 		}
 
+		void invalidate_dp_values() {
+			_fresh_dp = false;
+		}
+
 		ptr_t get_vertical_carve_path() {
 			_update_dp<&node::left, &node::right, &node::up, &node::down>(orientation::vertical);
 			return _get_carve_path_impl<&node::left, &node::right, &node::up, &node::down>();

@@ -156,6 +156,7 @@ constexpr char help_message[] =
 "\n"
 "R: Reset image\n"
 "S: Set current image as original\n"
+"W: Save current image to image_carved.png\n"
 "\n"
 "I: Remove a horizontal seam\n"
 "J: Remove a vertical seam\n"
@@ -262,6 +263,7 @@ void paint_compensate_region(size_t x1, size_t y1, size_t x2, size_t y2, retarge
 			}
 		}
 	}
+	retargeter.invalidate_dp_values();
 	refresh_displayed_image(true);
 }
 #endif
@@ -414,6 +416,19 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 					main_window.invalidate_visual();
 				}
 				break;
+
+			case 'W':
+				{
+#ifdef USE_DL_CARVER
+					image_rgba_u8 img = retargeter.get_image<>();
+#else
+					image_rgba_u8 img = retargeter.get_image();
+#endif
+					image_io saver;
+					saver.save_image(L"image_carved.png", img);
+					MessageBoxA(main_window.get_handle(), "Image saved", "Info", MB_OK);
+				}
+				break;
 			}
 		}
 		return 0;
@@ -457,7 +472,7 @@ int main(int argc, char **argv) {
 		size_t nc = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, nullptr, 0);
 		LPWSTR str = new WCHAR[nc];
 		MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, str, nc);
-		image_loader loader;
+		image_io loader;
 		orig_img = loader.load_image(reinterpret_cast<LPCWSTR>(str));
 		delete[] str;
 	}

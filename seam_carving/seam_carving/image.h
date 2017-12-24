@@ -207,36 +207,80 @@ namespace seam_carving {
 		return result;
 	}
 
-	struct image_loader {
+	struct image_io {
 	public:
-		image_loader() {
+		image_io() {
 			HRESULT hr = CoCreateInstance(
 				CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER,
 				IID_IWICImagingFactory, reinterpret_cast<LPVOID*>(&_factory)
 			);
 			assert(hr == S_OK);
 		}
-		~image_loader() {
+		~image_io() {
 			_factory->Release();
 		}
 		image_rgba_u8 load_image(LPCWSTR filename) {
 			IWICBitmapDecoder *decoder = nullptr;
 			SC_COM_CHECK(_factory->CreateDecoderFromFilename(filename, nullptr, GENERIC_READ, WICDecodeMetadataCacheOnDemand, &decoder));
 			IWICBitmapFrameDecode *frame = nullptr;
-			IWICBitmapSource *convertedframe = nullptr;
 			SC_COM_CHECK(decoder->GetFrame(0, &frame));
+			IWICBitmapSource *convertedframe = nullptr;
 			SC_COM_CHECK(WICConvertBitmapSource(GUID_WICPixelFormat32bppRGBA, frame, &convertedframe));
 			frame->Release();
 			UINT w, h;
 			SC_COM_CHECK(convertedframe->GetSize(&w, &h));
 			image_rgba_u8 result(static_cast<size_t>(w), static_cast<size_t>(h));
 			SC_COM_CHECK(convertedframe->CopyPixels(
-				nullptr, static_cast<UINT>(4 * w), static_cast<UINT>(4 * w * h),
+				nullptr,
+				static_cast<UINT>(sizeof(color_rgba_u8) * w),
+				static_cast<UINT>(sizeof(color_rgba_u8) * w * h),
 				reinterpret_cast<BYTE*>(result.data())
 			));
 			convertedframe->Release();
 			decoder->Release();
 			return result;
+		}
+		void save_image(LPCWSTR filename, const image_rgba_u8 &img) {
+			IWICStream *stream = nullptr;
+			SC_COM_CHECK(_factory->CreateStream(&stream));
+			SC_COM_CHECK(stream->InitializeFromFilename(filename, GENERIC_WRITE));
+			IWICBitmapEncoder *encoder = nullptr;
+			SC_COM_CHECK(_factory->CreateEncoder(GUID_ContainerFormatPng, nullptr, &encoder));
+			SC_COM_CHECK(encoder->Initialize(stream, WICBitmapEncoderNoCache));
+			IWICBitmapFrameEncode *frame = nullptr;
+			SC_COM_CHECK(encoder->CreateNewFrame(&frame, nullptr));
+			SC_COM_CHECK(frame->Initialize(nullptr));
+			SC_COM_CHECK(frame->SetSize(static_cast<UINT>(img.width()), static_cast<UINT>(img.height())));
+			WICPixelFormatGUID fmt = GUID_WICPixelFormat32bppRGBA;
+			SC_COM_CHECK(frame->SetPixelFormat(&fmt));
+			if (IsEqualGUID(fmt, GUID_WICPixelFormat32bppRGBA)) {
+				SC_COM_CHECK(frame->WritePixels(
+					static_cast<UINT>(img.height()),
+					static_cast<UINT>(sizeof(color_rgba_u8) * img.width()),
+					static_cast<UINT>(sizeof(color_rgba_u8) * img.width() * img.height()),
+					const_cast<BYTE*>(reinterpret_cast<const BYTE*>(img.data())) // WTF?
+				));
+			} else {
+				IWICBitmap *bmp = nullptr;
+				SC_COM_CHECK(_factory->CreateBitmapFromMemory(
+					static_cast<UINT>(img.width()), static_cast<UINT>(img.height()),
+					GUID_WICPixelFormat32bppRGBA,
+					static_cast<UINT>(sizeof(color_rgba_u8) * img.width()),
+					static_cast<UINT>(sizeof(color_rgba_u8) * img.width() * img.height()),
+					const_cast<BYTE*>(reinterpret_cast<const BYTE*>(img.data())), // same old
+					&bmp
+				));
+				IWICBitmapSource *converted = nullptr;
+				SC_COM_CHECK(WICConvertBitmapSource(fmt, bmp, &converted));
+				bmp->Release();
+				SC_COM_CHECK(frame->WriteSource(converted, nullptr));
+				converted->Release();
+			}
+			SC_COM_CHECK(frame->Commit());
+			SC_COM_CHECK(encoder->Commit());
+			frame->Release();
+			encoder->Release();
+			stream->Release();
 		}
 	protected:
 		IWICImagingFactory * _factory = nullptr;
