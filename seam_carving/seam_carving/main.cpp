@@ -12,7 +12,7 @@ using namespace seam_carving;
 #ifdef USE_DL_CARVER
 using retargeter_t = dancing_link_retargeter;
 #else
-using retargeter_t = dynamic_retargeter;
+using retargeter_t = simple_retargeter;
 #endif
 
 window main_window;
@@ -182,9 +182,7 @@ void refresh_displayed_image(bool repaint) {
 		simg = enlarger.get_sys_image(main_window.get_dc());
 	}
 #else
-	auto img = retargeter.get_image();
-	simg = sys_image(main_window.get_dc(), img.width(), img.height());
-	simg.copy_from_image(img);
+	simg = retargeter.get_sys_image(main_window.get_dc());
 #endif
 	if (repaint) {
 		main_window.invalidate_visual();
@@ -384,10 +382,18 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				} else {
 					auto begt = now();
 					set_cursor(OCR_WAIT);
+					retargeter.reset_updated_node_count();
 					enlarger.prepare(retargeter.prepare_horizontal_enlarging(), enlarge_status::horizontal);
-					double dur = std::chrono::duration<double>(now() - begt).count();
-					char msg[50];
-					std::snprintf(msg, sizeof(msg), "Preparation cmoplete\nTime usage: %lfs", dur);
+					float dur = std::chrono::duration<float>(now() - begt).count();
+					char msg[100];
+					unsigned tot = static_cast<unsigned>(
+						retargeter.current_width() * retargeter.current_height() * retargeter.current_width()
+						);
+					std::snprintf(
+						msg, sizeof(msg),
+						"Preparation cmoplete\nTime usage: %fs\nUpdated nodes: %u/%u(%f%%)",
+						dur, static_cast<unsigned>(retargeter.get_updated_node_count()), tot,
+						100.0f * (retargeter.get_updated_node_count() / static_cast<float>(tot)));
 					MessageBoxA(main_window.get_handle(), msg, "Info", MB_OK);
 				}
 				break;
@@ -397,10 +403,18 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				} else {
 					auto begt = now();
 					set_cursor(OCR_WAIT);
+					retargeter.reset_updated_node_count();
 					enlarger.prepare(retargeter.prepare_vertical_enlarging(), enlarge_status::vertical);
-					double dur = std::chrono::duration<double>(now() - begt).count();
-					char msg[50];
-					std::snprintf(msg, sizeof(msg), "Preparation cmoplete\nTime usage: %lfs", dur);
+					float dur = std::chrono::duration<float>(now() - begt).count();
+					char msg[100];
+					unsigned tot = static_cast<unsigned>(
+						retargeter.current_width() * retargeter.current_height() * retargeter.current_height()
+						);
+					std::snprintf(
+						msg, sizeof(msg),
+						"Preparation cmoplete\nTime usage: %fs\nUpdated nodes: %u/%u(%f%%)",
+						dur, static_cast<unsigned>(retargeter.get_updated_node_count()), tot,
+						100.0f * (retargeter.get_updated_node_count() / static_cast<float>(tot)));
 					MessageBoxA(main_window.get_handle(), msg, "Info", MB_OK);
 				}
 				break;
@@ -420,7 +434,12 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 			case 'W':
 				{
 #ifdef USE_DL_CARVER
-					image_rgba_u8 img = retargeter.get_image<>();
+					image_rgba_u8 img;
+					if (enlarger.type == enlarge_status::none) {
+						img = retargeter.get_image<>();
+					} else {
+						img = enlarger.get_image();
+					}
 #else
 					image_rgba_u8 img = retargeter.get_image();
 #endif
@@ -469,7 +488,7 @@ int main(int argc, char **argv) {
 	fnt = font::get_default();
 
 	{
-		size_t nc = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, nullptr, 0);
+		int nc = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, nullptr, 0);
 		LPWSTR str = new WCHAR[nc];
 		MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, str, nc);
 		image_io loader;
