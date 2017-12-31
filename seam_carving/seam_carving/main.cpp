@@ -1,5 +1,6 @@
 #include <utility>
 #include <chrono>
+#include <cstdio>
 
 #include "window.h"
 #include "carver.h"
@@ -57,7 +58,7 @@ public:
 		}
 	}
 	void retarget(size_t w, size_t h) {
-		size_t ev, et;
+		size_t ev = 0, et = 0;
 		if (type == enlarge_status::horizontal) {
 			ev = orig_img.width();
 			et = w;
@@ -120,10 +121,10 @@ protected:
 	template <typename Img> void _get_image_horizontal_impl(Img &img) const {
 		for (size_t y = 0; y < orig_img.height(); ++y) {
 			const color_rgba_u8 *src = orig_img.at_y(y);
-			Img::element_type *dst = img.at_y(y);
+			typename Img::element_type *dst = img.at_y(y);
 			const bool *rep = repeat.at_y(y);
 			for (size_t x = 0; x < orig_img.width(); ++x, ++src, ++dst, ++rep) {
-				*dst = Img::element_type(*src);
+				*dst = typename Img::element_type(*src);
 				if (*rep) {
 					dst[1] = dst[0];
 					++dst;
@@ -134,7 +135,7 @@ protected:
 	template <typename Img> void _get_image_vertical_impl(Img &img) const {
 		for (size_t x = 0; x < orig_img.width(); ++x) {
 			for (size_t y = 0, dy = 0; y < orig_img.height(); ++y, ++dy) {
-				img.at(x, dy) = Img::element_type(orig_img.at(x, y));
+				img.at(x, dy) = typename Img::element_type(orig_img.at(x, y));
 				if (repeat.at(x, y)) {
 					img.at(x, dy + 1) = img.at(x, dy);
 					++dy;
@@ -289,7 +290,10 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 				nr.left = 10;
 				nr.top = 10;
 				char tmp[1000];
-				std::snprintf(tmp, sizeof(tmp), help_message, show_compensation ? "on" : "off", brush_rad);
+				std::snprintf(
+					tmp, sizeof(tmp), help_message,
+					show_compensation ? "on" : "off", static_cast<unsigned>(brush_rad)
+				);
 				DrawTextA(bdc, tmp, -1, &nr, DT_TOP | DT_LEFT);
 			}
 

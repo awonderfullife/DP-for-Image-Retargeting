@@ -536,9 +536,9 @@ namespace seam_carving {
 		template <typename ColorProc, typename Img> void _get_image_impl(Img &img) const {
 			size_t yi = 0;
 			for (ptr_t y = _tl; y != null; y = _pderef(y).down, ++yi) {
-				Img::element_type *dst = img.at_y(yi);
+				typename Img::element_type *dst = img.at_y(yi);
 				for (ptr_t x = y; x != null; x = _pderef(x).right, ++dst) {
-					*dst = Img::element_type(ColorProc::process(_pderef(x)));
+					*dst = typename Img::element_type(ColorProc::process(_pderef(x)));
 				}
 			}
 			assert(yi == _h);

@@ -197,7 +197,7 @@ namespace seam_carving {
 			const typename image<From>::element_type *src = img.at_y(y);
 			typename image<To>::element_type *dst = result.at_y(y);
 			for (size_t x = 0; x < img.width(); ++x, ++src, ++dst) {
-				*dst = src->cast<typename To::element_type>();
+				*dst = src->template cast<typename To::element_type>();
 			}
 		}
 	}
