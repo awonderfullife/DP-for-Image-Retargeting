@@ -400,9 +400,9 @@ namespace seam_carving {
 				for (size_t y = 0; y < _rh; ++y) {
 					temp = aveg - _carve_img.at(x, y);
 					_energy.at(x, y) = sqrt(squared(temp.r) + squared(temp.g) + squared(temp.b));
+				}
 			}
 		}
-	}
 #endif
-};
+	};
 }

@@ -266,6 +266,9 @@ void paint_compensate_region(size_t x1, size_t y1, size_t x2, size_t y2, retarge
 }
 #endif
 
+void benchmark() {
+}
+
 LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lparam) {
 	switch (msg) {
 	case WM_CLOSE:
@@ -475,32 +478,87 @@ LRESULT CALLBACK main_window_proc(HWND hwnd, UINT msg, WPARAM wparam, LPARAM lpa
 	return DefWindowProc(hwnd, msg, wparam, lparam);
 }
 
+LPWSTR convert_to_widechar(const char *cs) {
+	int nc = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, cs, -1, nullptr, 0);
+	LPWSTR str = new WCHAR[nc];
+	MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, cs, -1, str, nc);
+	return str;
+}
+
+class simple_retargeter_benchmark : public simple_retargeter {
+public:
+	void carve_vertical(const simple_retargeter::carve_path_pixel_data &data) {
+		simple_retargeter::carve_vertical_in_situ(data);
+	}
+	unsigned long long additional_data() const {
+		return 0;
+	}
+};
+class dancing_link_retargeter_benchmark : public dancing_link_retargeter {
+public:
+	void carve_vertical(dancing_link_retargeter::ptr_t path) {
+		dancing_link_retargeter::carve_path_vertical(path);
+	}
+	unsigned long long additional_data() const {
+		return dancing_link_retargeter::get_updated_node_count();
+	}
+};
+
+template <typename Ret> void benchmark_retargeter(const char *fn) {
+	LPWSTR wfn = convert_to_widechar(fn);
+	image_io loader;
+	image_rgba_u8 img = loader.load_image(wfn);
+	delete[] wfn;
+	Ret ret;
+	ret.set_image(img);
+	size_t targetsize = img.width() / 2;
+	auto begt = now();
+	for (size_t i = 0; i < targetsize; ++i) {
+		ret.carve_vertical(ret.get_vertical_carve_path());
+	}
+	double dur = std::chrono::duration<double, std::milli>(now() - begt).count();
+	printf(
+		"%u %u %lf %llu\n",
+		static_cast<unsigned>(img.width()), static_cast<unsigned>(img.height()),
+		dur, ret.additional_data()
+	);
+}
+
 int main(int argc, char **argv) {
-	if (argc != 2) {
+	if (argc < 2) {
 		MessageBox(nullptr, TEXT("Usage: seam_carving [filename]"), TEXT("Usage"), MB_OK);
 		return 0;
 	}
 
-	main_window = window(
-		TEXT("main_window"), main_window_proc,
-		WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX
-	);
-	fnt = font::get_default();
+	if (argc == 3) {
+		switch (argv[1][0]) {
+		case 'o':
+			benchmark_retargeter<simple_retargeter_benchmark>(argv[2]);
+			break;
+		case 'd':
+			benchmark_retargeter<dancing_link_retargeter_benchmark>(argv[2]);
+			break;
+		}
+	} else {
+		main_window = window(
+			TEXT("main_window"), main_window_proc,
+			WS_OVERLAPPED | WS_CAPTION | WS_SYSMENU | WS_THICKFRAME | WS_MINIMIZEBOX
+		);
+		fnt = font::get_default();
 
-	{
-		int nc = MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, nullptr, 0);
-		LPWSTR str = new WCHAR[nc];
-		MultiByteToWideChar(CP_OEMCP, MB_PRECOMPOSED, argv[1], -1, str, nc);
-		image_io loader;
-		orig_img = loader.load_image(reinterpret_cast<LPCWSTR>(str));
-		delete[] str;
-	}
-	retargeter.set_image(orig_img);
-	refresh_displayed_image(false);
-	fit_image_size();
+		{
+			LPWSTR str = convert_to_widechar(argv[1]);
+			image_io loader;
+			orig_img = loader.load_image(reinterpret_cast<LPCWSTR>(str));
+			delete[] str;
+		}
+		retargeter.set_image(orig_img);
+		refresh_displayed_image(false);
+		fit_image_size();
 
-	main_window.show();
-	while (window::wait_message_all()) {
+		main_window.show();
+		while (window::wait_message_all()) {
+		}
 	}
 	return 0;
 }

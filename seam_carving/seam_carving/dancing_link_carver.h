@@ -6,7 +6,6 @@
 
 //#define USE_INDEX_PTR
 #define USE_INCREMENTAL
-#define GATHER_DP_STATS
 
 namespace seam_carving {
 	class dancing_link_retargeter {
@@ -203,20 +202,12 @@ namespace seam_carving {
 			return _pderef(p);
 		}
 
-#ifdef GATHER_DP_STATS
 		size_t get_updated_node_count() const {
 			return _updated_nodes;
 		}
 		void reset_updated_node_count() {
 			_updated_nodes = 0;
 		}
-#else
-		size_t get_updated_node_count() const {
-			return 0;
-		}
-		void reset_updated_node_count() {
-		}
-#endif
 
 		bool is_carved() const {
 			return _cps.size() > 0;
@@ -380,7 +371,7 @@ namespace seam_carving {
 					maxoffset = offset - 1;
 				}
 			}
-			void add(dancing_link_retargeter &ret, ptr_t p, int offset) {
+			void add_first(dancing_link_retargeter &ret, ptr_t p, int offset) {
 				node &n = ret._pderef(p);
 				ptr_t minv = p, maxv = p;
 				int mino = offset, maxo = offset;
@@ -403,6 +394,20 @@ namespace seam_carving {
 					max = maxv;
 				}
 			}
+			void add(dancing_link_retargeter &ret, ptr_t p, int offset) {
+				node &n = ret._pderef(p);
+				ptr_t maxv = p;
+				int maxo = offset;
+				if (n.*XP != null) {
+					maxv = n.*XP;
+					++maxo;
+				}
+				assert((maxo == maxoffset) == (max == maxv));
+				if (maxo > maxoffset) {
+					maxoffset = maxo;
+					max = maxv;
+				}
+			}
 		};
 		template <ptr_t node::*XN, ptr_t node::*XP, ptr_t node::*YN, ptr_t node::*YP> void _calc_dp_incremental(ptr_t lastpath) {
 			std::vector<ptr_t> path;
@@ -418,15 +423,15 @@ namespace seam_carving {
 			if (cur->*XN != null) {
 				node &xn = _pderef(cur->*XN);
 				xn.dp = xn.energy + xn.compensation;
-				nextr.add(*this, xn.*YN, -1);
+				nextr.add_first(*this, xn.*YN, -1);
 			}
 			if (cur->*XP != null) {
 				node &xp = _pderef(cur->*XP);
 				xp.dp = xp.energy + xp.compensation;
-				nextr.add(*this, xp.*YN, 0);
+				nextr.add_first(*this, xp.*YN, 0);
 			}
 			cur = &_pderef(path.back());
-			_inc_upd_nodes(2);
+			_updated_nodes += 2;
 
 			do {
 				std::swap(curr, nextr);
@@ -434,25 +439,31 @@ namespace seam_carving {
 				offset += curr.get_offset_1(*this, *cur, path.back());
 				nextr.reset(*this, path.back(), offset);
 				int of = curr.minoffset;
+				bool first = true;
 				for (ptr_t p = curr.min; ; p = _pderef(p).*XP, ++of) {
-					if (_update_dp_elem<XN, XP, YN, YP>(p)) {
-						nextr.add(*this, _pderef(p).*YN, of);
+					if (_update_dp_elem<XN, XP, YN, YP>(p) || p == cur->*XN || p == cur->*XP) {
+						if (first) {
+							nextr.add_first(*this, _pderef(p).*YN, of);
+							first = false;
+						} else {
+							nextr.add(*this, _pderef(p).*YN, of);
+						}
 					}
-					_inc_upd_nodes();
 					if (p == curr.max) {
 						break;
 					}
 				}
+				_updated_nodes += static_cast<size_t>(curr.maxoffset - curr.minoffset + 1);
 				cur = &_pderef(path.back());
 			} while (path.size() > 1);
 
 			for (ptr_t p = nextr.min; ; p = _pderef(p).*XP) {
 				_update_dp_elem<XN, XP, YN, YP>(p);
-				_inc_upd_nodes();
 				if (p == nextr.max) {
 					break;
 				}
 			}
+			_updated_nodes += static_cast<size_t>(nextr.maxoffset - nextr.minoffset + 1);
 			_fresh_dp = true;
 		}
 		template <ptr_t node::*XN, ptr_t node::*XP, ptr_t node::*YN, ptr_t node::*YP> void _update_dp(orientation orient) {
@@ -614,30 +625,15 @@ namespace seam_carving {
 		}
 #endif
 
+		void _inc_upd_nodes_full() {
+			_updated_nodes += _w * _h;
+		}
+
 		std::vector<node> _n;
 		std::vector<std::pair<ptr_t, orientation>> _cps;
 		ptr_t _tl = null, _br = null;
 		size_t _w = 0, _h = 0;
 		bool _fresh_dp = false;
-
-#ifdef GATHER_DP_STATS
 		size_t _updated_nodes = 0;
-		void _reset_upd_nodes(size_t v = 0) {
-			_updated_nodes = 0;
-		}
-		void _inc_upd_nodes(size_t v = 1) {
-			_updated_nodes += v;
-		}
-		void _inc_upd_nodes_full() {
-			_inc_upd_nodes(_w * _h);
-		}
-#else
-		void _reset_upd_nodes(size_t = 0) {
-		}
-		void _inc_upd_nodes(size_t = 1) {
-		}
-		void _inc_upd_nodes_full() {
-		}
-#endif
 	};
 }
